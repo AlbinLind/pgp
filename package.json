@@ -1,0 +1,29 @@
+{
+  "name": "pgp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi extension: review GitHub PR feedback and address it (read-only)",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "dev:fetch": "node scripts/dev-fetch.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
