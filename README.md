@@ -7,6 +7,8 @@ pull request into your session, lets you triage it, and then has the agent
 It is **read-only against GitHub**: it fetches comments, it never posts,
 replies, resolves, or otherwise changes the PR.
 
+![PGP quick demo](https://raw.githubusercontent.com/AlbinLind/pgp/main/media/quick-demo.gif)
+
 ## Why
 
 `gh pr view` shows the conversation and the review summaries, but not the
@@ -36,8 +38,11 @@ agent has both sides.
 ## Install
 
 ```bash
-# once the repo is published
-pi install git:github.com/AlbinLind/pgp
+# published package
+pi install npm:@albinn/pgp
+
+# or straight from git, pinned to a release tag
+pi install git:github.com/AlbinLind/pgp@v0.1.0
 
 # local development checkout
 pi -e ./src/index.ts
