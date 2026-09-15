@@ -224,7 +224,100 @@ function makeComponent(currentUser: string | undefined) {
   check("long hunk: recomputed header", rendered.includes("@@ -5,3 +5,3 @@"));
   check("long hunk: elides distant rows", !rendered.includes("c01") && !rendered.includes("c10"));
   check("long hunk: keeps the anchor", rendered.includes(" c06"));
-  check("long hunk: notes the total", rendered.includes("10 diff line(s) total"));
+  check("long hunk: notes the total", rendered.includes("10 total"));
+}
+
+// --- a long comment body must not clip the diff tail -------------------------
+{
+  const hunk = [
+    "@@ -1,10 +1,11 @@",
+    " c01",
+    " c02",
+    " c03",
+    " c04",
+    " c05",
+    " c06",
+    " c07",
+    " c08",
+    " c09",
+    " c10",
+  ].join("\n");
+  const item: Feedback = {
+    kind: "inline",
+    id: "inline:clip",
+    path: "file.ts",
+    line: 5,
+    originalLine: 5,
+    startLine: null,
+    originalStartLine: null,
+    side: "RIGHT",
+    outdated: false,
+    diffHunk: hunk,
+    comments: [
+      {
+        id: 1,
+        author: "alice",
+        body: "A very long comment body that wraps over several preview lines and would otherwise push the diff tail out of the visible pane. ".repeat(
+          4,
+        ),
+        createdAt: "2026-01-01",
+        isReply: false,
+      },
+      { id: 2, author: "bob", body: "reply", createdAt: "2026-01-02", isReply: true },
+    ],
+  };
+  const entries: TriageEntry[] = [{ item, selected: true, includeDiff: true, diffContext: 2 }];
+  const component = new ReviewTriageComponent({
+    title: "t",
+    entries,
+    currentUser: "alice",
+    theme,
+    maxListRows: 4,
+    maxPreviewLines: 12,
+    requestRender: () => {},
+    onDone: () => {},
+  });
+  const rendered = component.render(90).join("\n");
+  check("long body: after-context stays visible", rendered.includes("c07"), rendered);
+  check("long body: body is truncated with a note", rendered.includes("more comment line(s)"));
+}
+
+// --- oversized slices re-center instead of clipping the tail -----------------
+{
+  const body = Array.from({ length: 30 }, (_, i) => ` c${String(i + 1).padStart(2, "0")}`);
+  const hunk = ["@@ -1,30 +1,30 @@", ...body].join("\n");
+  const item: Feedback = {
+    kind: "inline",
+    id: "inline:center",
+    path: "file.ts",
+    line: 15,
+    originalLine: 15,
+    startLine: null,
+    originalStartLine: null,
+    anchorLine: 15,
+    anchorStartLine: null,
+    side: "RIGHT",
+    outdated: false,
+    diffHunk: hunk,
+    comments: [
+      { id: 1, author: "alice", body: "note", createdAt: "2026-01-01", isReply: false },
+    ],
+  };
+  const entries: TriageEntry[] = [{ item, selected: true, includeDiff: true, diffContext: 10 }];
+  const component = new ReviewTriageComponent({
+    title: "t",
+    entries,
+    currentUser: "alice",
+    theme,
+    maxListRows: 4,
+    maxPreviewLines: 12,
+    requestRender: () => {},
+    onDone: () => {},
+  });
+  const rendered = component.render(90).join("\n");
+  check("oversized: shows context before the anchor", rendered.includes("c11"), rendered);
+  check("oversized: shows context after the anchor", rendered.includes("c19"), rendered);
+  check("oversized: does not show the far tail", !rendered.includes("c30"));
 }
 
 // --- uppercase via shift and legacy input -----------------------------------

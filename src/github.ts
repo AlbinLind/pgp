@@ -18,6 +18,7 @@ import type {
   ReviewSummary,
   ThreadComment,
 } from "./types.ts";
+import { buildPatchHunks, fullHunkForComment, type PatchFile, type PatchHunk } from "./patch.ts";
 
 /** Minimal execution surface the GitHub layer depends on (pi.exec). */
 export type GhExecutor = (
@@ -260,10 +261,11 @@ export async function fetchPullFeedback(
     const pr = await resolvePullRequest(exec, cwd, prNumber, signal);
     const base = `/repos/${pr.owner}/${pr.repo}`;
 
-    const [comments, reviews, issueComments, currentUser] = await Promise.all([
+    const [comments, reviews, issueComments, files, currentUser] = await Promise.all([
       ghApiList(exec, cwd, `${base}/pulls/${pr.number}/comments`, signal),
       ghApiList(exec, cwd, `${base}/pulls/${pr.number}/reviews`, signal),
       ghApiList(exec, cwd, `${base}/issues/${pr.number}/comments`, signal),
+      ghApiList(exec, cwd, `${base}/pulls/${pr.number}/files`, signal),
       getAuthenticatedUser(exec, cwd, signal),
     ]);
 
@@ -271,6 +273,7 @@ export async function fetchPullFeedback(
       comments as RawReviewComment[],
       reviews as RawReview[],
       issueComments as RawIssueComment[],
+      buildPatchHunks(files as PatchFile[]),
     );
 
     return { pr, items, currentUser };
@@ -283,9 +286,10 @@ export function normalizeFeedback(
   comments: RawReviewComment[],
   reviews: RawReview[],
   issueComments: RawIssueComment[],
+  patchHunks?: Map<string, PatchHunk[]>,
 ): Feedback[] {
   return [
-    ...buildInlineThreads(comments),
+    ...buildInlineThreads(comments, patchHunks),
     ...buildReviewSummaries(reviews),
     ...buildIssueComments(issueComments),
   ];
@@ -301,7 +305,10 @@ function toThreadComment(comment: RawReviewComment): ThreadComment {
   };
 }
 
-function buildInlineThreads(comments: RawReviewComment[]): InlineThread[] {
+function buildInlineThreads(
+  comments: RawReviewComment[],
+  patchHunks?: Map<string, PatchHunk[]>,
+): InlineThread[] {
   const byId = new Map<number, RawReviewComment>();
   for (const comment of comments) {
     byId.set(comment.id, comment);
@@ -342,6 +349,15 @@ function buildInlineThreads(comments: RawReviewComment[]): InlineThread[] {
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
     const ordered = [root, ...replies];
 
+    // The API's `diff_hunk` ends at the comment, so prefer the full hunk from
+    // the PR file patch when the comment is still current.
+    const side = root.side === "LEFT" ? "LEFT" : "RIGHT";
+    const fullHunk = fullHunkForComment(patchHunks?.get(root.path), side, root.line ?? null);
+    const anchorLine = fullHunk ? (root.line ?? null) : (root.original_line ?? root.line ?? null);
+    const anchorStartLine = fullHunk
+      ? (root.start_line ?? root.original_start_line ?? null)
+      : (root.original_start_line ?? root.start_line ?? null);
+
     threads.push({
       kind: "inline",
       id: `inline:${rootId}`,
@@ -350,9 +366,11 @@ function buildInlineThreads(comments: RawReviewComment[]): InlineThread[] {
       originalLine: root.original_line ?? null,
       startLine: root.start_line ?? null,
       originalStartLine: root.original_start_line ?? null,
-      side: root.side === "LEFT" ? "LEFT" : "RIGHT",
+      anchorLine,
+      anchorStartLine,
+      side,
       outdated: (root.line ?? null) === null,
-      diffHunk: root.diff_hunk ?? "",
+      diffHunk: fullHunk ? fullHunk.lines.join("\n") : (root.diff_hunk ?? ""),
       comments: ordered.map(toThreadComment),
     });
   }

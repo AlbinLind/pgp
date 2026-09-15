@@ -516,44 +516,77 @@ export class ReviewTriageComponent implements Component {
           ? item.submittedAt
           : item.createdAt;
     const meta = `[${item.kind}] ${feedbackLocation(item)} · ${authors}${outdated}${date ? ` · ${formatDate(date)}` : ""}`;
-    const out: string[] = [truncateToWidth(this.theme.fg("muted", meta), width, "…")];
+    const header = truncateToWidth(this.theme.fg("muted", meta), width, "…");
 
+    const body: string[] = [];
+    const diff: string[] = [];
     if (item.kind === "inline") {
       const root = item.comments[0];
       if (root) {
-        out.push(...wrapWithPrefix(this.theme.fg("text", root.body), width, "  ", "  "));
+        body.push(...wrapWithPrefix(this.theme.fg("text", root.body), width, "  ", "  "));
       }
       for (const reply of item.comments.slice(1)) {
         const author = `@${reply.author}`;
         const firstPrefix = `${this.theme.fg("dim", "  ↳ ")}${this.theme.fg("accent", author)}${this.theme.fg("dim", ": ")}`;
         const restPrefix = " ".repeat(4 + visibleWidth(author) + 2);
-        out.push(...wrapWithPrefix(this.theme.fg("text", reply.body), width, firstPrefix, restPrefix));
+        body.push(...wrapWithPrefix(this.theme.fg("text", reply.body), width, firstPrefix, restPrefix));
       }
 
+      const sliceLineBudget = Math.max(1, this.maxPreviewLines - 2);
+      let slice =
+        entry.includeDiff && item.diffHunk.trim()
+          ? sliceDiffHunk(item, entry.diffContext)
+          : undefined;
+      let shownContext = entry.diffContext;
+      if (slice && slice.lines.length > sliceLineBudget && slice.anchorStart >= 0) {
+        // The slice is taller than the pane: re-slice around the anchor so
+        // context on both sides survives instead of tail-clamping the diff.
+        const anchorSpan = slice.anchorEnd - slice.anchorStart + 1;
+        const spare = sliceLineBudget - 1 - anchorSpan;
+        if (spare >= 0) {
+          shownContext = Math.max(MIN_DIFF_CONTEXT, Math.floor(spare / 2));
+          if (shownContext < entry.diffContext) {
+            slice = sliceDiffHunk(item, shownContext);
+          }
+        }
+      }
       const diffState = entry.includeDiff
         ? this.theme.fg("success", "on")
         : this.theme.fg("dim", "off");
-      out.push(
-        `${this.theme.fg("muted", `  diff: ${diffState} (±${entry.diffContext} lines)`)}${this.theme.fg("dim", " · d toggle · [ fewer · ] more")}`,
+      const total = slice?.trimmed ? ` · ${slice.totalRows} total` : "";
+      diff.push(
+        `${this.theme.fg("muted", `  diff: ${diffState} (±${shownContext} lines)${total}`)}${this.theme.fg("dim", " · d toggle · [ fewer · ] more")}`,
       );
-      if (entry.includeDiff && item.diffHunk.trim()) {
-        const slice = sliceDiffHunk(item, entry.diffContext);
+      if (slice) {
         for (const hunkLine of slice.lines) {
-          out.push(this.theme.fg(diffColor(hunkLine), `  ${hunkLine}`));
-        }
-        if (slice.trimmed) {
-          out.push(
-            this.theme.fg(
-              "dim",
-              `  … ${slice.totalRows} diff line(s) total (${slice.elidedBefore} before, ${slice.elidedAfter} after)`,
-            ),
-          );
+          diff.push(this.theme.fg(diffColor(hunkLine), `  ${hunkLine}`));
         }
       }
     } else {
-      out.push(...wrapWithPrefix(this.theme.fg("text", item.body), width, "  ", "  "));
+      body.push(...wrapWithPrefix(this.theme.fg("text", item.body), width, "  ", "  "));
     }
 
-    return clampPreview(out, this.maxPreviewLines, this.theme);
+    // Prefer keeping the diff (especially the context after the commented
+    // line) intact. When it all does not fit, trim the comment body first so
+    // the tail of the diff is not what gets cut off.
+    const budget = this.maxPreviewLines - 1;
+    if (body.length + diff.length <= budget) {
+      return [header, ...body, ...diff];
+    }
+    if (diff.length > budget) {
+      // The diff alone fills the pane: fall back to a tail clamp.
+      return clampPreview([header, ...diff], this.maxPreviewLines, this.theme);
+    }
+    const bodyBudget = budget - diff.length;
+    const bodyPart =
+      bodyBudget <= 0
+        ? []
+        : bodyBudget >= body.length
+          ? body
+          : [
+              ...body.slice(0, bodyBudget - 1),
+              this.theme.fg("dim", `  … ${body.length - (bodyBudget - 1)} more comment line(s)`),
+            ];
+    return [header, ...bodyPart, ...diff];
   }
 }

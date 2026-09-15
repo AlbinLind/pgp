@@ -26,6 +26,8 @@ function makeInline(overrides: Partial<InlineThread> = {}): InlineThread {
     originalLine: null,
     startLine: null,
     originalStartLine: null,
+    anchorLine: null,
+    anchorStartLine: null,
     side: "RIGHT",
     outdated: false,
     diffHunk: "",

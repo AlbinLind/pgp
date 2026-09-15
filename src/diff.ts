@@ -1,9 +1,11 @@
 /**
  * Diff-hunk slicing.
  *
- * A GitHub `diff_hunk` is the entire hunk surrounding an inline comment, which
- * can be dozens of lines. For both the triage preview and the agent prompt we
- * only want the slice around the line(s) the comment is anchored to.
+ * A stored hunk can be dozens of lines, but for both the triage preview and the
+ * agent prompt we only want the slice around the line(s) the comment is
+ * anchored to. Note that GitHub's per-comment `diff_hunk` is truncated to end
+ * at the comment, so the hunk usually comes from the PR's file patch instead
+ * (see `patch.ts`).
  *
  * `sliceDiffHunk` is pure and has no pi/TUI dependencies so it can be unit
  * tested directly.
@@ -26,9 +28,14 @@ export interface DiffSlice {
   elidedAfter: number;
   /** Total body rows in the original hunk (excluding the header). */
   totalRows: number;
+  /** Index in `lines` of the first anchor row, or -1 when unknown. */
+  anchorStart: number;
+  /** Index in `lines` of the last anchor row, or -1 when unknown. */
+  anchorEnd: number;
 }
 
-interface HunkHeader {
+/** Parsed `@@ -oldStart,oldCount +newStart,newCount @@` header. */
+export interface HunkHeader {
   oldStart: number;
   oldCount: number;
   newStart: number;
@@ -43,7 +50,7 @@ interface Anchor {
   end: number;
 }
 
-function parseHunkHeader(line: string): HunkHeader | undefined {
+export function parseHunkHeader(line: string): HunkHeader | undefined {
   const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(line);
   if (!match) {
     return undefined;
@@ -66,9 +73,9 @@ function formatHunkHeader(header: HunkHeader, oldStart: number, oldCount: number
 }
 
 /**
- * Candidate anchors, most reliable first. `original_*` matches the captured
- * hunk (it is the line at the time the comment was written); the current line
- * is a fallback for hunks GitHub recomputed against the latest diff.
+ * Candidate anchors, most reliable first. `anchorLine` is set during
+ * normalization to match the stored hunk; `original_*` is the fallback for the
+ * API's truncated hunks (which end at the comment).
  */
 function resolveAnchors(item: InlineThread): Anchor[] {
   const side: DiffSide = item.side ?? "RIGHT";
@@ -80,6 +87,7 @@ function resolveAnchors(item: InlineThread): Anchor[] {
     const rawStart = start ?? end;
     anchors.push({ side, start: Math.min(rawStart, end), end: Math.max(rawStart, end) });
   };
+  push(item.anchorLine, item.anchorStartLine);
   push(item.originalLine, item.originalStartLine);
   push(item.line, item.startLine);
   return anchors;
@@ -91,7 +99,15 @@ function isNoNewline(line: string): boolean {
 }
 
 function fullSlice(allLines: string[], totalRows: number): DiffSlice {
-  return { lines: allLines, trimmed: false, elidedBefore: 0, elidedAfter: 0, totalRows };
+  return {
+    lines: allLines,
+    trimmed: false,
+    elidedBefore: 0,
+    elidedAfter: 0,
+    totalRows,
+    anchorStart: -1,
+    anchorEnd: -1,
+  };
 }
 
 /**
@@ -208,5 +224,7 @@ export function sliceDiffHunk(item: InlineThread, context: number): DiffSlice {
     elidedBefore,
     elidedAfter,
     totalRows: body.length,
+    anchorStart: 1 + (first - from),
+    anchorEnd: 1 + (last - from),
   };
 }

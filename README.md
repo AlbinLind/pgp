@@ -17,9 +17,15 @@ inline diff comments. This extension fetches all three feedback sources:
 | Inline diff review comments (threaded) | `GET /repos/{owner}/{repo}/pulls/{n}/comments` |
 | Review summaries (review bodies) | `GET /repos/{owner}/{repo}/pulls/{n}/reviews` |
 | General PR comments | `GET /repos/{owner}/{repo}/issues/{n}/comments` |
+| Full file patches (hunk context) | `GET /repos/{owner}/{repo}/pulls/{n}/files` |
 
 Empty review bodies (GitHub creates one per inline comment) are filtered out.
 Replies are grouped into threads, and outdated comments are marked.
+
+GitHub truncates each comment's `diff_hunk` to end at the commented line, so it
+never contains code *after* the comment. PGP fetches the PR's file patches and
+resolves the full hunk from there, so the diff context shown to you and the
+agent has both sides.
 
 ## Requirements
 

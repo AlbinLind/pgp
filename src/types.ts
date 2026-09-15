@@ -30,6 +30,10 @@ export interface InlineThread {
   /** First line of a multi-line comment range, when applicable. */
   startLine: number | null;
   originalStartLine: number | null;
+  /** Line the stored `diffHunk` should be sliced around. */
+  anchorLine: number | null;
+  /** First line of the anchor range within the stored `diffHunk`. */
+  anchorStartLine: number | null;
   /** Side of the diff the comment is anchored to. */
   side: DiffSide;
   outdated: boolean;
