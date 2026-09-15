@@ -1,16 +1,40 @@
 {
-  "name": "pgp",
+  "name": "@albinn/pgp",
   "version": "0.1.0",
-  "private": true,
   "description": "Pi extension: review GitHub PR feedback and address it (read-only)",
   "type": "module",
+  "license": "MIT",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-extension",
+    "github",
+    "pull-request",
+    "code-review"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlbinLind/pgp.git"
+  },
+  "homepage": "https://github.com/AlbinLind/pgp#readme",
+  "bugs": {
+    "url": "https://github.com/AlbinLind/pgp/issues"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/AlbinLind/pgp/main/media/quick-demo.gif"
   },
   "scripts": {
     "check": "tsc --noEmit",
@@ -20,7 +44,10 @@
     "dev:config": "node scripts/dev-config.ts",
     "dev:triage": "node scripts/dev-triage.ts",
     "dev:command": "node scripts/dev-command.ts",
-    "dev:tui": "node scripts/dev-tui-command.ts"
+    "dev:tui": "node scripts/dev-tui-command.ts",
+    "release:patch": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
