@@ -9,6 +9,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import pgpExtension from "../src/index.ts";
 import { ReviewTriageComponent } from "../src/ui/triage.ts";
 
@@ -55,11 +56,25 @@ const exec = async (command: string, args: string[], options?: { cwd?: string; t
 };
 
 let handler: ((args: string, ctx: unknown) => Promise<void>) | undefined;
-let sent: Array<{ content: unknown; options: unknown }> = [];
+let messageRenderer:
+  | ((message: unknown, options: unknown, theme: unknown) => { render(width: number): string[] })
+  | undefined;
+let sent: Array<{ content: unknown; options: unknown; details: unknown }> = [];
 const pi = {
   exec,
+  sendMessage: (message: { content?: unknown; details?: unknown }, options?: unknown) => {
+    sent.push({ content: message.content, options, details: message.details });
+  },
   sendUserMessage: (content: unknown, options?: unknown) => {
-    sent.push({ content, options });
+    sent.push({ content, options, details: undefined });
+  },
+  registerMessageRenderer: (
+    type: string,
+    renderer: (message: unknown, options: unknown, theme: unknown) => { render(width: number): string[] },
+  ) => {
+    if (type === "pgp-review") {
+      messageRenderer = renderer;
+    }
   },
   registerCommand: (name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
     if (name === "pr-review") {
@@ -134,6 +149,41 @@ if (content.includes("Comment on something that will be gone")) {
   process.exit(1);
 }
 console.log("ok: TUI path sent the expected prompt with per-item diff");
+
+// --- message card renderer --------------------------------------------------
+if (!messageRenderer) {
+  console.error("FAIL: pgp-review message renderer was not registered");
+  process.exit(1);
+}
+const cardMessage = {
+  customType: "pgp-review",
+  content: sent[0].content,
+  display: true,
+  details: sent[0].details,
+};
+const collapsed = messageRenderer(cardMessage, { expanded: false, outputPad: 0 }, fakeTheme).render(100);
+if (!collapsed.some((line) => line.includes("Addressing 3 review item(s)"))) {
+  console.error(`FAIL: collapsed card missing header:\n${collapsed.join("\n")}`);
+  process.exit(1);
+}
+if (!collapsed.some((line) => line.includes("README.md:3"))) {
+  console.error("FAIL: collapsed card missing item rows");
+  process.exit(1);
+}
+if (collapsed.some((line) => line.includes("Do NOT post"))) {
+  console.error("FAIL: collapsed card should hide the full prompt");
+  process.exit(1);
+}
+if (collapsed.some((line) => visibleWidth(line) > 100)) {
+  console.error("FAIL: collapsed card overflows width 100");
+  process.exit(1);
+}
+const expanded = messageRenderer(cardMessage, { expanded: true, outputPad: 0 }, fakeTheme).render(100);
+if (!expanded.some((line) => line.includes("Do NOT post"))) {
+  console.error("FAIL: expanded card should show the full prompt");
+  process.exit(1);
+}
+console.log("ok: message card collapses and expands correctly");
 
 // --- cancel path ------------------------------------------------------------
 console.log(`--- /pr-review ${prArg} (TUI path, cancel) ---`);

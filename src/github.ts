@@ -103,8 +103,43 @@ export async function assertGhAvailable(
 ): Promise<void> {
   const result = await exec("gh", ["--version"], { cwd, signal, timeout: 10_000 });
   if (result.code !== 0) {
-    throw new GitHubError("GitHub CLI (gh) is not installed or not on PATH");
+    throw new GitHubError(
+      "GitHub CLI (gh) is not installed or not on PATH",
+      "Install it from https://cli.github.com/ and run `gh auth login`",
+    );
   }
+}
+
+/** Add actionable hints to common gh failures. */
+function classifyGhError(error: unknown, prNumber: number | undefined): unknown {
+  if (!(error instanceof GitHubError)) {
+    return error;
+  }
+  const detail = error.detail ?? "";
+  if (/not a git repository/i.test(detail)) {
+    return new GitHubError("Not inside a git repository", detail);
+  }
+  if (/no (open )?pull requests? found|Could not resolve to a PullRequest/i.test(detail)) {
+    return prNumber === undefined
+      ? new GitHubError(
+          "No PR found for the current branch",
+          `${detail}\nPass a PR number explicitly, e.g. /pr-review 123`,
+        )
+      : new GitHubError(`PR #${prNumber} not found`, detail);
+  }
+  if (/authentication|not logged in|gh auth login|bad credentials|HTTP 401/i.test(detail)) {
+    return new GitHubError(
+      "GitHub authentication failed",
+      `${detail}\nRun \`gh auth login\` and try again`,
+    );
+  }
+  if (/rate limit/i.test(detail)) {
+    return new GitHubError(
+      "GitHub API rate limit exceeded",
+      `${detail}\nWait a bit and try again`,
+    );
+  }
+  return error;
 }
 
 function parseRepoFromPrUrl(prUrl: string): { owner: string; repo: string } {
@@ -216,23 +251,28 @@ export async function fetchPullFeedback(
   signal: AbortSignal | undefined,
 ): Promise<PullFeedback> {
   await assertGhAvailable(exec, cwd, signal);
-  const pr = await resolvePullRequest(exec, cwd, prNumber, signal);
-  const base = `/repos/${pr.owner}/${pr.repo}`;
 
-  const [comments, reviews, issueComments, currentUser] = await Promise.all([
-    ghApiList(exec, cwd, `${base}/pulls/${pr.number}/comments`, signal),
-    ghApiList(exec, cwd, `${base}/pulls/${pr.number}/reviews`, signal),
-    ghApiList(exec, cwd, `${base}/issues/${pr.number}/comments`, signal),
-    getAuthenticatedUser(exec, cwd, signal),
-  ]);
+  try {
+    const pr = await resolvePullRequest(exec, cwd, prNumber, signal);
+    const base = `/repos/${pr.owner}/${pr.repo}`;
 
-  const items = normalizeFeedback(
-    comments as RawReviewComment[],
-    reviews as RawReview[],
-    issueComments as RawIssueComment[],
-  );
+    const [comments, reviews, issueComments, currentUser] = await Promise.all([
+      ghApiList(exec, cwd, `${base}/pulls/${pr.number}/comments`, signal),
+      ghApiList(exec, cwd, `${base}/pulls/${pr.number}/reviews`, signal),
+      ghApiList(exec, cwd, `${base}/issues/${pr.number}/comments`, signal),
+      getAuthenticatedUser(exec, cwd, signal),
+    ]);
 
-  return { pr, items, currentUser };
+    const items = normalizeFeedback(
+      comments as RawReviewComment[],
+      reviews as RawReview[],
+      issueComments as RawIssueComment[],
+    );
+
+    return { pr, items, currentUser };
+  } catch (error) {
+    throw classifyGhError(error, prNumber);
+  }
 }
 
 export function normalizeFeedback(

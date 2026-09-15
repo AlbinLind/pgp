@@ -35,9 +35,13 @@ const sent: Array<{ content: unknown; options: unknown }> = [];
 
 const pi = {
   exec,
+  sendMessage: (message: { content?: unknown }, options?: unknown) => {
+    sent.push({ content: message.content, options });
+  },
   sendUserMessage: (content: unknown, options?: unknown) => {
     sent.push({ content, options });
   },
+  registerMessageRenderer: () => {},
   registerCommand: (name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) => {
     if (name === "pr-review") {
       handler = options.handler;

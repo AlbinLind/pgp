@@ -11,10 +11,34 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
-import { buildPrompt } from "./format.ts";
+import { Box, Text } from "@earendil-works/pi-tui";
+import {
+  buildPrompt,
+  feedbackAuthors,
+  feedbackLocation,
+  feedbackPreview,
+} from "./format.ts";
 import { type GhExecutor, GitHubError, fetchPullFeedback } from "./github.ts";
-import type { PullFeedback, SelectionEntry } from "./types.ts";
+import type { Feedback, PullFeedback, SelectionEntry } from "./types.ts";
 import { ReviewTriageComponent, type TriageEntry } from "./ui/triage.ts";
+
+const REVIEW_MESSAGE = "pgp-review";
+
+interface ReviewCardItem {
+  index: number;
+  kind: Feedback["kind"];
+  location: string;
+  authors: string[];
+  preview: string;
+  includeDiff: boolean;
+}
+
+interface ReviewCardData {
+  title: string;
+  url: string;
+  items: ReviewCardItem[];
+  prompt: string;
+}
 
 function notifyError(ctx: ExtensionCommandContext, error: unknown): void {
   if (error instanceof GitHubError) {
@@ -32,6 +56,11 @@ function defaultSelection(feedback: PullFeedback): SelectionEntry[] {
     .map((item) => ({ item, includeDiff: false }));
 }
 
+/**
+ * Send the generated prompt as a custom `pgp-review` message. Custom messages
+ * reach the LLM as user messages but render as a collapsed card (see the
+ * registered message renderer below).
+ */
 function sendPrompt(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
@@ -39,11 +68,31 @@ function sendPrompt(
   selection: SelectionEntry[],
 ): void {
   const prompt = buildPrompt(feedback.pr, selection);
+  const details: ReviewCardData = {
+    title: `${feedback.pr.owner}/${feedback.pr.repo}#${feedback.pr.number} "${feedback.pr.title}"`,
+    url: feedback.pr.url,
+    items: selection.map((entry, index) => ({
+      index: index + 1,
+      kind: entry.item.kind,
+      location: feedbackLocation(entry.item),
+      authors: feedbackAuthors(entry.item),
+      preview: feedbackPreview(entry.item),
+      includeDiff: entry.includeDiff,
+    })),
+    prompt,
+  };
+  const message = {
+    customType: REVIEW_MESSAGE,
+    content: prompt,
+    display: true,
+    details,
+  };
+
   if (ctx.isIdle()) {
-    pi.sendUserMessage(prompt);
+    pi.sendMessage(message, { triggerTurn: true });
     return;
   }
-  pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+  pi.sendMessage(message, { deliverAs: "followUp" });
   ctx.ui.notify("Queued the PR review as a follow-up", "info");
 }
 
@@ -134,6 +183,47 @@ function showTriage(
 }
 
 export default function pgpExtension(pi: ExtensionAPI): void {
+  pi.registerMessageRenderer<ReviewCardData>(
+    REVIEW_MESSAGE,
+    (message, { expanded, outputPad }, theme) => {
+      const data = message.details;
+      const box = new Box(outputPad, 0, (text) => theme.bg("customMessageBg", text));
+
+      if (!data) {
+        const content = typeof message.content === "string" ? message.content : "";
+        box.addChild(new Text(theme.fg("text", content), 0, 0));
+        return box;
+      }
+
+      box.addChild(
+        new Text(
+          theme.fg(
+            "accent",
+            theme.bold(`[pgp] Addressing ${data.items.length} review item(s) — ${data.title}`),
+          ),
+          0,
+          0,
+        ),
+      );
+      for (const item of data.items) {
+        const authors = item.authors.map((author) => `@${author}`).join(", ");
+        const diff = item.includeDiff ? theme.fg("success", " ±diff") : "";
+        box.addChild(
+          new Text(
+            `  ${theme.fg("dim", String(item.index).padStart(2, " "))}. ${theme.fg("muted", `[${item.kind}] ${item.location}`)} ${authors}${diff} — ${item.preview}`,
+            0,
+            0,
+          ),
+        );
+      }
+      box.addChild(new Text(theme.fg("dim", data.url), 0, 0));
+      if (expanded) {
+        box.addChild(new Text(theme.fg("dim", data.prompt), 0, 0));
+      }
+      return box;
+    },
+  );
+
   pi.registerCommand("pr-review", {
     description: "Fetch GitHub PR review feedback (read-only) and address it",
     handler: async (args, ctx) => {
