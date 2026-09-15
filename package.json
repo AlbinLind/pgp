@@ -1,6 +1,6 @@
 {
   "name": "@albinn/pgp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension: review GitHub PR feedback and address it (read-only)",
   "type": "module",
   "license": "MIT",
