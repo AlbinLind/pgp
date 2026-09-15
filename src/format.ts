@@ -6,8 +6,10 @@ import type {
   Feedback,
   FeedbackCategory,
   PullRequestRef,
+  SelectionEntry,
   SelectionResult,
 } from "./types.ts";
+import { sliceDiffHunk } from "./diff.ts";
 
 /** All authors associated with an item (a thread may have several). */
 export function feedbackAuthors(item: Feedback): string[] {
@@ -52,8 +54,8 @@ export function feedbackPreview(item: Feedback, maxLength = 80): string {
 
 /**
  * Build the user message handed to the agent. Always includes kind, path/line,
- * author, and the full comment text. The diff hunk is only included for items
- * whose `includeDiff` toggle is on.
+ * author, and the full comment text. A diff slice is included only for items
+ * whose `includeDiff` toggle is on, sized by `diffContext`.
  */
 export function buildPrompt(pr: PullRequestRef, selection: SelectionResult): string {
   const lines: string[] = [];
@@ -83,14 +85,15 @@ export function buildPrompt(pr: PullRequestRef, selection: SelectionResult): str
   lines.push("");
 
   selection.forEach((entry, index) => {
-    lines.push(...renderItem(entry.item, index + 1, entry.includeDiff));
+    lines.push(...renderItem(entry, index + 1));
     lines.push("");
   });
 
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-function renderItem(item: Feedback, index: number, includeDiff: boolean): string[] {
+function renderItem(entry: SelectionEntry, index: number): string[] {
+  const { item } = entry;
   if (item.kind === "inline") {
     const root = item.comments[0];
     const outdated = item.outdated ? " (outdated)" : "";
@@ -103,9 +106,15 @@ function renderItem(item: Feedback, index: number, includeDiff: boolean): string
     for (const reply of item.comments.slice(1)) {
       out.push(`- ↳ @${reply.author}: ${reply.body.replace(/\n/g, "\n  ")}`);
     }
-    if (includeDiff && item.diffHunk.trim()) {
+    if (entry.includeDiff && item.diffHunk.trim()) {
+      const slice = sliceDiffHunk(item, entry.diffContext);
+      if (slice.trimmed) {
+        out.push(
+          `_(${entry.diffContext} line(s) of context each side · ${slice.totalRows} diff line(s) total)_`,
+        );
+      }
       out.push("```diff");
-      out.push(item.diffHunk.trimEnd());
+      out.push(...slice.lines);
       out.push("```");
     }
     return out;

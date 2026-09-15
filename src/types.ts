@@ -16,6 +16,9 @@ export interface ThreadComment {
   isReply: boolean;
 }
 
+/** Which side of the diff an inline comment is anchored to. */
+export type DiffSide = "LEFT" | "RIGHT";
+
 /** A root inline diff comment plus its replies. */
 export interface InlineThread {
   kind: "inline";
@@ -24,6 +27,11 @@ export interface InlineThread {
   /** Current line, or null when the comment is outdated. */
   line: number | null;
   originalLine: number | null;
+  /** First line of a multi-line comment range, when applicable. */
+  startLine: number | null;
+  originalStartLine: number | null;
+  /** Side of the diff the comment is anchored to. */
+  side: DiffSide;
   outdated: boolean;
   diffHunk: string;
   /** Root comment first, then replies in chronological order. */
@@ -64,10 +72,13 @@ export interface PullRequestRef {
   baseRefName: string;
 }
 
-/** One selected feedback item plus its UI-only diff toggle. */
+/** One selected feedback item plus its UI-only diff settings. */
 export interface SelectionEntry {
   item: Feedback;
+  /** Whether the diff hunk is included for this item. */
   includeDiff: boolean;
+  /** Lines of context shown on each side of the commented line when included. */
+  diffContext: number;
 }
 
 export type SelectionResult = SelectionEntry[];

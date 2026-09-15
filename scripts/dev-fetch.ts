@@ -59,7 +59,7 @@ items.forEach((item, index) => {
 
 const selection = items
   .filter((item) => !(item.kind === "inline" && item.outdated))
-  .map((item) => ({ item, includeDiff: false }));
+  .map((item) => ({ item, includeDiff: false, diffContext: 3 }));
 
 console.log(`\n=== PROMPT (${selection.length} selected) ===\n`);
 console.log(buildPrompt(pr, selection));

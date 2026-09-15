@@ -15,6 +15,8 @@
   "scripts": {
     "check": "tsc --noEmit",
     "dev:fetch": "node scripts/dev-fetch.ts",
+    "dev:diff": "node scripts/dev-diff.ts",
+    "dev:config": "node scripts/dev-config.ts",
     "dev:triage": "node scripts/dev-triage.ts",
     "dev:command": "node scripts/dev-command.ts",
     "dev:tui": "node scripts/dev-tui-command.ts"

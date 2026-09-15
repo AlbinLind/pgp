@@ -73,12 +73,16 @@ The command:
 │ [inline] README.md:3 · @AlbinLind · 2026-09-14                              │
 │   Test comment                                                              │
 │   ↳ @reviewer: A reply                                                      │
-│   diff: off (press d to toggle)                                             │
+│   diff: off (±3 lines) · d toggle · [ fewer · ] more                        │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The preview pane shows the full body, thread replies, and — when enabled with
 `d` — the diff hunk.
+
+When the diff is shown it is **sliced to the lines around the comment** rather
+than dumping the whole hunk: `[` shows fewer context lines and `]` shows more
+(default 3, clamped to 1–20).
 
 ### Keys
 
@@ -95,6 +99,7 @@ The preview pane shows the full body, thread replies, and — when enabled with
 | `c` | Select all **general comments**, keeping the selection |
 | `C` | Select **only** general comments |
 | `d` | Toggle diff-hunk inclusion for the highlighted inline thread |
+| `[` / `]` | Fewer / more context lines around the commented line (turns the diff on) |
 | `enter` | Confirm selection |
 | `esc` | Cancel |
 
@@ -106,8 +111,30 @@ it. Bulk selection preserves per-item diff toggles.
 - Everything is selected **except outdated inline comments** (still shown so
   you can opt in).
 - Diff hunks are **off** by default and included only for items where you
-  pressed `d`.
+  pressed `d`. When on, only the slice around the commented line(s) is shown;
+  the size of that slice comes from config (default 3).
 - "mine" means the authenticated `gh` user.
+
+## Configuration
+
+PGP reads its own JSON config (pi has no per-extension settings namespace):
+
+| Location | Scope |
+|----------|-------|
+| `~/.pi/agent/pgp.json` | Global |
+| `.pi/pgp.json` | Project (only when the project is trusted) |
+
+```json
+{
+  "diffContext": 3
+}
+```
+
+`diffContext` is the number of context lines shown on each side of the
+commented line when a diff is included. It is clamped to `1..20`; project values
+override global values, and malformed files are ignored with a warning. The
+value only sets the slice size — diffs still start out off until you press `d`
+(or `[` / `]`).
 
 ## What the agent sees
 

@@ -13,6 +13,7 @@
  *   r / R         select all review items (add) / only review (replace)
  *   c / C         select all general comments (add) / only comments (replace)
  *   d             toggle diff-hunk inclusion for the highlighted inline thread
+ *   [ / ]         fewer / more context lines around the comment (turns diff on)
  *   enter         confirm
  *   esc           cancel
  */
@@ -34,12 +35,15 @@ import {
   feedbackLocation,
   feedbackPreview,
 } from "../format.ts";
+import { MAX_DIFF_CONTEXT, MIN_DIFF_CONTEXT, sliceDiffHunk } from "../diff.ts";
 import type { Feedback, FeedbackCategory, SelectionEntry } from "../types.ts";
 
 export interface TriageEntry {
   item: Feedback;
   selected: boolean;
   includeDiff: boolean;
+  /** Lines of context shown on each side when the diff is included. */
+  diffContext: number;
 }
 
 export type TriageResult = SelectionEntry[] | null;
@@ -78,6 +82,11 @@ function matchLetter(data: string, letter: string): LetterMatch {
     return "upper";
   }
   return undefined;
+}
+
+/** Match a bracket key (`[` / `]`) across legacy and Kitty input. */
+function matchBracket(data: string, char: "[" | "]"): boolean {
+  return data === char || parseKey(data) === char || decodeKittyPrintable(data) === char;
 }
 
 function padVisual(text: string, width: number): string {
@@ -218,6 +227,14 @@ export class ReviewTriageComponent implements Component {
     }
     if (matchLetter(data, "d")) {
       this.toggleDiff();
+      return;
+    }
+    if (matchBracket(data, "[")) {
+      this.adjustDiffContext(-1);
+      return;
+    }
+    if (matchBracket(data, "]")) {
+      this.adjustDiffContext(1);
     }
   }
 
@@ -334,10 +351,32 @@ export class ReviewTriageComponent implements Component {
     this.refresh();
   }
 
+  private adjustDiffContext(delta: number): void {
+    const entry = this.entries[this.cursor];
+    if (!entry) {
+      return;
+    }
+    if (entry.item.kind !== "inline") {
+      this.notice = "Diff hunks only apply to inline review comments";
+      this.refresh();
+      return;
+    }
+    entry.diffContext = Math.max(
+      MIN_DIFF_CONTEXT,
+      Math.min(MAX_DIFF_CONTEXT, entry.diffContext + delta),
+    );
+    entry.includeDiff = true;
+    this.refresh();
+  }
+
   private confirm(): void {
     const selected = this.entries
       .filter((entry) => entry.selected)
-      .map((entry) => ({ item: entry.item, includeDiff: entry.includeDiff }));
+      .map((entry) => ({
+        item: entry.item,
+        includeDiff: entry.includeDiff,
+        diffContext: entry.diffContext,
+      }));
     if (selected.length === 0) {
       this.notice = "Select at least one item, or press esc to cancel";
       this.refresh();
@@ -438,7 +477,10 @@ export class ReviewTriageComponent implements Component {
         : "";
     const diffMark =
       entry.item.kind === "inline"
-        ? this.theme.fg(entry.includeDiff ? "success" : "dim", entry.includeDiff ? " ±" : " ·")
+        ? this.theme.fg(
+            entry.includeDiff ? "success" : "dim",
+            entry.includeDiff ? ` ±${entry.diffContext}` : " ·",
+          )
         : "";
 
     const used = visibleWidth(row) + visibleWidth(outdated) + visibleWidth(diffMark) + 1;
@@ -492,11 +534,20 @@ export class ReviewTriageComponent implements Component {
         ? this.theme.fg("success", "on")
         : this.theme.fg("dim", "off");
       out.push(
-        `${this.theme.fg("muted", `  diff: ${diffState}`)}${this.theme.fg("dim", " (press d to toggle)")}`,
+        `${this.theme.fg("muted", `  diff: ${diffState} (±${entry.diffContext} lines)`)}${this.theme.fg("dim", " · d toggle · [ fewer · ] more")}`,
       );
       if (entry.includeDiff && item.diffHunk.trim()) {
-        for (const hunkLine of item.diffHunk.split("\n")) {
+        const slice = sliceDiffHunk(item, entry.diffContext);
+        for (const hunkLine of slice.lines) {
           out.push(this.theme.fg(diffColor(hunkLine), `  ${hunkLine}`));
+        }
+        if (slice.trimmed) {
+          out.push(
+            this.theme.fg(
+              "dim",
+              `  … ${slice.totalRows} diff line(s) total (${slice.elidedBefore} before, ${slice.elidedAfter} after)`,
+            ),
+          );
         }
       }
     } else {

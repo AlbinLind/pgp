@@ -19,6 +19,7 @@ import {
   feedbackPreview,
 } from "./format.ts";
 import { type GhExecutor, GitHubError, fetchPullFeedback } from "./github.ts";
+import { loadConfig } from "./config.ts";
 import type { Feedback, PullFeedback, SelectionEntry } from "./types.ts";
 import { ReviewTriageComponent, type TriageEntry } from "./ui/triage.ts";
 
@@ -31,6 +32,8 @@ interface ReviewCardItem {
   authors: string[];
   preview: string;
   includeDiff: boolean;
+  /** Present on messages created after diff context became customizable. */
+  diffContext?: number;
 }
 
 interface ReviewCardData {
@@ -50,10 +53,10 @@ function notifyError(ctx: ExtensionCommandContext, error: unknown): void {
 }
 
 /** Default selection: everything except outdated inline comments, diff off. */
-function defaultSelection(feedback: PullFeedback): SelectionEntry[] {
+function defaultSelection(feedback: PullFeedback, diffContext: number): SelectionEntry[] {
   return feedback.items
     .filter((item) => !(item.kind === "inline" && item.outdated))
-    .map((item) => ({ item, includeDiff: false }));
+    .map((item) => ({ item, includeDiff: false, diffContext }));
 }
 
 /**
@@ -78,6 +81,7 @@ function sendPrompt(
       authors: feedbackAuthors(entry.item),
       preview: feedbackPreview(entry.item),
       includeDiff: entry.includeDiff,
+      diffContext: entry.diffContext,
     })),
     prompt,
   };
@@ -157,11 +161,13 @@ async function loadFeedback(
 function showTriage(
   ctx: ExtensionCommandContext,
   feedback: PullFeedback,
+  defaultDiffContext: number,
 ): Promise<SelectionEntry[] | null> {
   const entries: TriageEntry[] = feedback.items.map((item) => ({
     item,
     selected: !(item.kind === "inline" && item.outdated),
     includeDiff: false,
+    diffContext: defaultDiffContext,
   }));
 
   return ctx.ui.custom<SelectionEntry[] | null>((tui, theme, _keybindings, done) => {
@@ -207,7 +213,9 @@ export default function pgpExtension(pi: ExtensionAPI): void {
       );
       for (const item of data.items) {
         const authors = item.authors.map((author) => `@${author}`).join(", ");
-        const diff = item.includeDiff ? theme.fg("success", " ±diff") : "";
+        const diff = item.includeDiff
+          ? theme.fg("success", ` ±diff(${item.diffContext ?? 3})`)
+          : "";
         box.addChild(
           new Text(
             `  ${theme.fg("dim", String(item.index).padStart(2, " "))}. ${theme.fg("muted", `[${item.kind}] ${item.location}`)} ${authors}${diff} — ${item.preview}`,
@@ -235,6 +243,11 @@ export default function pgpExtension(pi: ExtensionAPI): void {
       const prNumber = raw ? Number.parseInt(raw, 10) : undefined;
       const exec: GhExecutor = (command, cmdArgs, options) => pi.exec(command, cmdArgs, options);
 
+      const { config, warnings } = loadConfig(ctx);
+      for (const warning of warnings) {
+        ctx.ui.notify(warning, "warning");
+      }
+
       const feedback = await loadFeedback(ctx, exec, prNumber);
       if (!feedback) {
         return;
@@ -249,11 +262,11 @@ export default function pgpExtension(pi: ExtensionAPI): void {
 
       // Non-TUI modes (print/json/rpc) skip the window and use the defaults.
       if (ctx.mode !== "tui") {
-        sendPrompt(pi, ctx, feedback, defaultSelection(feedback));
+        sendPrompt(pi, ctx, feedback, defaultSelection(feedback, config.diffContext));
         return;
       }
 
-      const selection = await showTriage(ctx, feedback);
+      const selection = await showTriage(ctx, feedback, config.diffContext);
       if (!selection) {
         ctx.ui.notify("PR review cancelled", "info");
         return;

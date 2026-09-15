@@ -51,6 +51,10 @@ interface RawReviewComment {
   path: string;
   line: number | null;
   original_line: number | null;
+  start_line?: number | null;
+  original_start_line?: number | null;
+  side?: "LEFT" | "RIGHT" | null;
+  start_side?: "LEFT" | "RIGHT" | null;
   diff_hunk: string | null;
   in_reply_to_id: number | null;
   user: { login: string } | null;
@@ -344,6 +348,9 @@ function buildInlineThreads(comments: RawReviewComment[]): InlineThread[] {
       path: root.path,
       line: root.line ?? null,
       originalLine: root.original_line ?? null,
+      startLine: root.start_line ?? null,
+      originalStartLine: root.original_start_line ?? null,
+      side: root.side === "LEFT" ? "LEFT" : "RIGHT",
       outdated: (root.line ?? null) === null,
       diffHunk: root.diff_hunk ?? "",
       comments: ordered.map(toThreadComment),

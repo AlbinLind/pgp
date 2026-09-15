@@ -34,6 +34,9 @@ const items: Feedback[] = [
     path: "README.md",
     line: 3,
     originalLine: 3,
+    startLine: null,
+    originalStartLine: null,
+    side: "RIGHT",
     outdated: false,
     diffHunk: "@@ -0,0 +1,3 @@\n+# PGP - Pi Github Prs",
     comments: [
@@ -47,6 +50,9 @@ const items: Feedback[] = [
     path: "README.md",
     line: null,
     originalLine: 5,
+    startLine: null,
+    originalStartLine: null,
+    side: "RIGHT",
     outdated: true,
     diffHunk: "@@ -0,0 +1,5 @@\n+# PGP - Pi Github Prs",
     comments: [
@@ -91,6 +97,7 @@ function makeComponent(currentUser: string | undefined) {
     item,
     selected: !(item.kind === "inline" && item.outdated),
     includeDiff: false,
+    diffContext: 3,
   }));
   let result: TriageResult = undefined;
   const component = new ReviewTriageComponent({
@@ -144,6 +151,80 @@ function makeComponent(currentUser: string | undefined) {
   component.handleInput("d");
   check("d on non-inline does nothing", !entries[2].includeDiff);
   check("d on non-inline shows notice", component.render(80).some((l) => l.includes("only apply to inline")));
+}
+
+// --- [ / ] context controls --------------------------------------------------
+{
+  const { component, entries } = makeComponent("AlbinLind");
+  check("context: seeded from config", entries[0].diffContext === 3);
+  component.handleInput("]");
+  check("] turns diff on", entries[0].includeDiff);
+  check("] increments context", entries[0].diffContext === 4);
+  component.handleInput("[");
+  component.handleInput("[");
+  check("[ decrements context", entries[0].diffContext === 2);
+  for (let i = 0; i < 40; i++) {
+    component.handleInput("[");
+  }
+  check("[ clamps at min", entries[0].diffContext === 1);
+  for (let i = 0; i < 40; i++) {
+    component.handleInput("]");
+  }
+  check("] clamps at max", entries[0].diffContext === 20);
+
+  component.handleInput("j"); // outdated inline
+  component.handleInput("j"); // review
+  component.handleInput("]");
+  check(
+    "] on non-inline shows notice",
+    component.render(80).some((l) => l.includes("only apply to inline")),
+  );
+}
+
+// --- long hunks render only the slice ---------------------------------------
+{
+  const longHunk = [
+    "@@ -1,10 +1,10 @@",
+    " c01",
+    " c02",
+    " c03",
+    " c04",
+    " c05",
+    " c06",
+    " c07",
+    " c08",
+    " c09",
+    " c10",
+  ].join("\n");
+  const item: Feedback = {
+    kind: "inline",
+    id: "inline:long",
+    path: "file.ts",
+    line: 6,
+    originalLine: 6,
+    startLine: null,
+    originalStartLine: null,
+    side: "RIGHT",
+    outdated: false,
+    diffHunk: longHunk,
+    comments: [],
+  };
+  const entries: TriageEntry[] = [{ item, selected: true, includeDiff: true, diffContext: 1 }];
+  const component = new ReviewTriageComponent({
+    title: "t",
+    entries,
+    currentUser: "AlbinLind",
+    theme,
+    maxListRows: 5,
+    maxPreviewLines: 30,
+    requestRender: () => {},
+    onDone: () => {},
+  });
+  const rendered = component.render(100).join("\n");
+  check("long hunk: recomputed header", rendered.includes("@@ -5,3 +5,3 @@"));
+  check("long hunk: elides distant rows", !rendered.includes("c01") && !rendered.includes("c10"));
+  check("long hunk: keeps the anchor", rendered.includes(" c06"));
+  check("long hunk: notes the total", rendered.includes("10 diff line(s) total"));
 }
 
 // --- uppercase via shift and legacy input -----------------------------------
