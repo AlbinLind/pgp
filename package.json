@@ -14,7 +14,10 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "dev:fetch": "node scripts/dev-fetch.ts"
+    "dev:fetch": "node scripts/dev-fetch.ts",
+    "dev:triage": "node scripts/dev-triage.ts",
+    "dev:command": "node scripts/dev-command.ts",
+    "dev:tui": "node scripts/dev-tui-command.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
