@@ -1,0 +1,44 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Trusted publishing (OIDC): no long-lived npm tokens.
+# `id-token: write` lets the npm CLI exchange a GitHub OIDC token for a
+# short-lived publish token. Provenance is generated automatically because
+# this repository and the package are public.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Trusted publishing requires npm >= 11.5.1 and Node >= 22.14.0.
+      # Do NOT set `registry-url` here: setup-node would write an .npmrc with
+      # an empty NODE_AUTH_TOKEN that can shadow OIDC and fail the publish.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - run: npm install -g npm@^11.15.0
+      - run: npm ci
+      - run: npm run check
+
+      - name: Verify tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $pkg" >&2
+            exit 1
+          fi
+
+      # publishConfig.access=public in package.json; OIDC auth + provenance are
+      # detected automatically.
+      - run: npm publish
